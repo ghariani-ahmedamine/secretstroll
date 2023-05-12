@@ -15,6 +15,7 @@ resembles the original scheme definition. However, you are free to restructure
 the functions provided to resemble a more object-oriented interface.
 """
 
+import hashlib
 from typing import Any, List, Tuple
 
 from serialization import jsonpickle
@@ -150,11 +151,36 @@ def create_issue_request(
     for i in user_attributes:
         C = C * ( pk[i + 1] ** user_attributes[i]) 
 
-    PK = zk_proof(t, user_attributes, C, pk) # proof to define 
+    PK = zero_knowledge_proof(t, user_attributes, C, pk) # proof to define 
 
     return (C, PK) , (t, user_attributes)
     
+  
+
+def zero_knowledge_proof(t, user_attributes, C, pk):
+    """Creates the zero knowledge proof for the user_attributes,given commitment C""" 
     
+    # generate random values
+    r = G2.order().random()
+    s = G2.order().random()
+    
+    # compute A and B
+    A = (pk[0] ** r) * (pk[-1] ** s)
+    B = (G1.generator() ** r) * (C ** s)
+    
+    # compute challenge
+    c = hashlib.sha256(A.export() + B.export()).digest()
+    c = int.from_bytes(c, byteorder='big') % G2.order()
+    
+    # compute z_r and z_s
+    z_r = r
+    z_s = s
+    for i in user_attributes:
+        z_r = (z_r + (c * pk[i + 1])) % G2.order()
+        z_s = (z_s + (c * user_attributes[i])) % G2.order()
+    
+    # return proof
+    return (A, B, c, z_r, z_s)
 
 
 def sign_issue_request(
@@ -171,7 +197,7 @@ def sign_issue_request(
     C, PK = request[0], request[1]
 
 
-    assert verify_proof(PK, pk, C) # to define 
+    assert verify_non_interactive_proof(PK, pk, C) # to define 
 
     
     
@@ -187,6 +213,35 @@ def sign_issue_request(
     
     signature = (g ** u , prod)
     return signature , issuer_attributes
+
+def verify_non_interactive_proof(proof, pk, C):
+    """Verify the non-interactive zero-knowledge proof for the committed attributes in C"""
+    
+    # unpack proof
+    A, B, c, z_r, z_s = proof
+    
+    # compute A' and B'
+    A_prime = (pk[0] ** z_r) * (pk[-1] ** z_s)
+    B_prime = (G1.generator() ** z_r) * (C ** z_s)
+    
+    # compute challenge
+    c_prime = hashlib.sha256(A_prime.export() + B_prime.export()).digest()
+    c_prime = int.from_bytes(c_prime, byteorder='big') % G2.order()
+    
+    # check if challenges match
+    if c != c_prime:
+        return False
+    
+    # check if A and A' match
+    if not A.is_equal(pk[0] ** z_r * pk[-1] ** z_s * A_prime.inverse()):
+        return False
+    
+    # check if B and B' match
+    if not B.is_equal(G1.generator() ** z_r * C ** z_s * B_prime.inverse()):
+        return False
+    
+    # proof is valid
+    return True
 
 
     
