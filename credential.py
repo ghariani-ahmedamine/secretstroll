@@ -21,6 +21,7 @@ from typing import Any, List, Tuple
 from serialization import jsonpickle
 
 from petrelic.multiplicative.pairing import G1, G2, GT
+
 from petrelic.bn import Bn
 
 # Type hint aliases
@@ -65,12 +66,12 @@ def generate_key(
     g_tilda_to_y_values = [g_tilda ** i for i in y]
 
     # form pk = (g, X, Y1, ... ,YL)
-    PublicKey = (g, ) + tuple(g_to_y_values) + (g_tilda, X_tilda) + tuple(g_tilda_to_y_values)
+    pk = (g, ) + tuple(g_to_y_values) + (g_tilda, X_tilda) + tuple(g_tilda_to_y_values)
    
     # form sk = (x, y1, ... ,yL)
-    SecretKey = (x,X) + tuple(y)
+    sk = (x,X) + tuple(y)
     
-    return Tuple[SecretKey, PublicKey]
+    return sk, pk
     
 
 
@@ -81,24 +82,27 @@ def sign(
     """ Sign the vector of messages `msgs` """
     
     # Pick random generator h 
-    h = G1.generator() * Bn.get_random()
+    h = G1.generator()
 
     # Convert msgs from bytes to Bn
-    hndler =  BnHandler()
-    bn_msgs = [hndler.restore(m) for m in msgs ]
+    bn_msgs = [Bn.from_binary(m) for m in msgs]
     
     # Unpack secret key components
     x,  y = sk[0],  sk[2:]
 
     # Compute x + sum (yi * mi)
-    sum = Bn.inner_prod(y, tuple(bn_msgs)) # should it be in Zp ??
+    sum = inner_product(y, tuple(bn_msgs)) # should it be in Zp ??
     sum = x + sum
     
     # Form signature
     Signature = (h , h ** sum)
     return Signature
     
-
+def inner_product(a, b):
+    result = Bn(0)
+    for i in range(len(b)):
+        result += a[i] * b[i]
+    return result
 
 def verify(
         pk: PublicKey,
@@ -112,8 +116,7 @@ def verify(
         return False
 
     # Convert msgs from bytes to Bn 
-    hndler = BnHandler()
-    bn_msgs = [hndler.restore(m) for m in msgs]
+    bn_msgs = [Bn.from_binary(m) for m in msgs]
    
     # Unpack public key compenents
     l = len(msgs)
@@ -122,11 +125,11 @@ def verify(
     #Compute the product of Yi ** mi
     prod_Yi_mi = G2.neutral_element()
     for i in range(l):
-        prod_Yi_mi *= Y_tilda[i] ** bn_msgs[i]
+        prod_Yi_mi = prod_Yi_mi.mul(Y_tilda[i] ** bn_msgs[i])
     
     # Check equality of the pairing
-    return signature[0].pair(X_tilda * prod_Yi_mi) == signature[1].pair(g_tilda)
-
+    return (signature[0].mul(X_tilda)).pair(prod_Yi_mi) == signature[1].mul(g_tilda)
+    
 #################################
 ## ATTRIBUTE-BASED CREDENTIALS ##
 #################################
@@ -149,7 +152,7 @@ def create_issue_request(
     t = G2.order().random()
     C = pk[0] ** t
     for i in user_attributes:
-        C = C * ( pk[i + 1] ** user_attributes[i]) 
+        C = C.mul(pk[i + 1] ** user_attributes[i]) 
 
     PK = zero_knowledge_proof(t, user_attributes, C, pk) # proof to define 
 
@@ -165,7 +168,7 @@ def zero_knowledge_proof(t, user_attributes, C, pk):
     s = G2.order().random()
     
     # compute A and B
-    A = (pk[0] ** r) * (pk[-1] ** s)
+    A = (pk[0] ** r).pair(pk[-1] ** s)
     B = (G1.generator() ** r) * (C ** s)
     
     # compute challenge
