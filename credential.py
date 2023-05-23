@@ -65,12 +65,12 @@ def generate_key(
     g_to_y_values = [g ** i for i in y]
     g_tilda_to_y_values = [g_tilda ** i for i in y]
 
-    # form pk = (g, X, Y1, ... ,YL)
-    pk = (g, ) + tuple(g_to_y_values) + (g_tilda, X_tilda) + tuple(g_tilda_to_y_values)
+    # form pk = (g, Y1 , ..., YL , , g̃, X̃, Ỹ1 , ..., ỸL )
+    pk = (g, ) + tuple(g_to_y_values) + tuple(" ") + (g_tilda, X_tilda) + tuple(g_tilda_to_y_values)
    
-    # form sk = (x, y1, ... ,yL)
+    # form sk = (x, X, y1, ... ,yL)
     sk = (x,X) + tuple(y)
-    
+
     return sk, pk
     
 
@@ -120,7 +120,7 @@ def verify(
    
     # Unpack public key compenents
     l = len(msgs)
-    g, Y, g_tilda, X_tilda, Y_tilda  = pk[0], pk[1:l], pk[l+1], pk[l+2], pk[l+3:]
+    g, Y, g_tilda, X_tilda, Y_tilda  = pk[0], pk[1:l], pk[l+2], pk[l+3], pk[l+4:2*l+3]
     
     #Compute the product of Yi ** mi
     prod_Yi_mi = G2.neutral_element()
@@ -128,6 +128,7 @@ def verify(
         prod_Yi_mi = prod_Yi_mi.mul(Y_tilda[i] ** bn_msgs[i])
     
     # Check equality of the pairing
+    
     return (signature[0].mul(X_tilda)).pair(prod_Yi_mi) == signature[1].mul(g_tilda)
     
 #################################
@@ -151,8 +152,12 @@ def create_issue_request(
     # Pick t 
     t = G2.order().random()
     C = pk[0] ** t
+
     for i in user_attributes:
-        C = C.mul(pk[i + 1] ** user_attributes[i]) 
+        if type(C) == type(pk[i + 1] ** user_attributes[i]):
+            C = C.mul(pk[i + 1] ** user_attributes[i])
+        else:
+            C = C.pair(pk[i + 1] ** user_attributes[i])
 
     PK = zero_knowledge_proof(t, user_attributes, C, pk) # proof to define 
 
@@ -169,10 +174,12 @@ def zero_knowledge_proof(t, user_attributes, C, pk):
     
     # compute A and B
     A = (pk[0] ** r).pair(pk[-1] ** s)
-    B = (G1.generator() ** r) * (C ** s)
-    
+    print(type(C ** s))
+    print(type((G1.generator() ** r)))
+    B = C.pair(G1.generator()) ** s * (G1.generator() ** r)
+    print(type(B))
     # compute challenge
-    c = hashlib.sha256(A.export() + B.export()).digest()
+    c = hashlib.sha256(A.to_binary() + B.to_binary()).digest()
     c = int.from_bytes(c, byteorder='big') % G2.order()
     
     # compute z_r and z_s
