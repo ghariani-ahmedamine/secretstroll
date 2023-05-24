@@ -117,19 +117,23 @@ def verify(
 
     # Convert msgs from bytes to Bn 
     bn_msgs = [Bn.from_binary(m) for m in msgs]
-   
-    # Unpack public key compenents
-    l = len(msgs)
-    g, Y, g_tilda, X_tilda, Y_tilda  = pk[0], pk[1:l], pk[l+2], pk[l+3], pk[l+4:2*l+3]
+
+    if len(pk) % 2 != 0:
+        raise ValueError("The size of the public key should be even !")
+    key_length = int((len(pk) - 4)/2)
+    message_len = len(msgs)
+    
+    # Unpack public key compenents from pk = (g, Y1 , ..., YL , , g̃, X̃, Ỹ1 , ..., ỸL )
+    g, Y, g_tilda, X_tilda, Y_tilda  = pk[0], pk[1:key_length+1], pk[key_length+2], pk[key_length+3], pk[key_length+4:2*key_length+4]
     
     #Compute the product of Yi ** mi
     prod_Yi_mi = G2.neutral_element()
-    for i in range(l):
+
+    for i in range(message_len):
         prod_Yi_mi = prod_Yi_mi.mul(Y_tilda[i] ** bn_msgs[i])
     
     # Check equality of the pairing
-    
-    return (signature[0].mul(X_tilda)).pair(prod_Yi_mi) == signature[1].mul(g_tilda)
+    return (signature[0].pair(X_tilda.mul(prod_Yi_mi))) == signature[1].pair(g_tilda)
     
 #################################
 ## ATTRIBUTE-BASED CREDENTIALS ##
@@ -174,10 +178,7 @@ def zero_knowledge_proof(t, user_attributes, C, pk):
     
     # compute A and B
     A = (pk[0] ** r).pair(pk[-1] ** s)
-    print(type(C ** s))
-    print(type((G1.generator() ** r)))
     B = C.pair(G1.generator()) ** s * (G1.generator() ** r)
-    print(type(B))
     # compute challenge
     c = hashlib.sha256(A.to_binary() + B.to_binary()).digest()
     c = int.from_bytes(c, byteorder='big') % G2.order()

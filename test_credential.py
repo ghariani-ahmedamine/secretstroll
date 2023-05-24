@@ -16,6 +16,18 @@ def test_sign_and_verify():
     assert signature is not None
     valid = verify(pk, signature, [message])
     assert valid
+    
+def test_sign_and_verify_for_longer_messages():
+    attributes = [1, 2, 3, 4]
+    sk, pk = generate_key(attributes)
+    msg = b"Here is a"
+    msg2 = b"longer test"
+    msg3 = b"message"
+    msg4 = b"to see if it work"
+    signature = sign(sk, [msg, msg2, msg3, msg4])
+    assert signature is not None
+    valid = verify(pk, signature, [msg, msg2, msg3, msg4])
+    assert valid
 
 def test_create_issue_request():
     attributes = [1, 2, 3]
