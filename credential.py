@@ -7,7 +7,7 @@ only provides major functionality that you will need.
 
 You will likely have to define more functions and/or classes. In particular, to
 maintain clean code, we recommend to use classes for things that you want to
-send between parties. You can then use `jsonpickle` serialization to convert
+send between parties. You can then use jsonpickle serialization to convert
 these classes to byte arrays (as expected by the other classes) and back again.
 
 We also avoided the use of classes in this template so that the code more closely
@@ -66,8 +66,8 @@ def generate_key(
     g_tilda_to_y_values = [g_tilda ** i for i in y]
 
     # form pk = (g, Y1 , ..., YL , , g̃, X̃, Ỹ1 , ..., ỸL )
-    pk = (g, ) + tuple(g_to_y_values) + tuple(" ") + (g_tilda, X_tilda) + tuple(g_tilda_to_y_values)
-   
+    pk = (g, ) + tuple(g_to_y_values) + tuple(" ")  + (g_tilda, X_tilda) + tuple(g_tilda_to_y_values)
+    
     # form sk = (x, X, y1, ... ,yL)
     sk = (x,X) + tuple(y)
 
@@ -79,7 +79,7 @@ def sign(
         sk: SecretKey,
         msgs: List[bytes]
     ) -> Signature:
-    """ Sign the vector of messages `msgs` """
+    """ Sign the vector of messages msgs """
     
     # Pick random generator h 
     h = G1.generator()
@@ -119,7 +119,7 @@ def verify(
     bn_msgs = [Bn.from_binary(m) for m in msgs]
 
     if len(pk) % 2 != 0:
-        raise ValueError("The size of the public key should be even !")
+       raise ValueError("The size of the public key should be even !")
     key_length = int((len(pk) - 4)/2)
     message_len = len(msgs)
     
@@ -149,7 +149,7 @@ def create_issue_request(
 
     This corresponds to the "user commitment" step in the issuance protocol.
 
-    *Warning:* You may need to pass state to the `obtain_credential` function.
+    Warning: You may need to pass state to the obtain_credential function.
     """
     
 
@@ -158,10 +158,9 @@ def create_issue_request(
     C = pk[0] ** t
 
     for i in user_attributes:
-        if type(C) == type(pk[i + 1] ** user_attributes[i]):
-            C = C.mul(pk[i + 1] ** user_attributes[i])
-        else:
-            C = C.pair(pk[i + 1] ** user_attributes[i])
+     
+        C = C.mul(pk[i + 1] ** Bn.from_binary(user_attributes[i].encode()))
+        
 
     PK = zero_knowledge_proof(t, user_attributes, C, pk) # proof to define 
 
@@ -173,25 +172,29 @@ def zero_knowledge_proof(t, user_attributes, C, pk):
     """Creates the zero knowledge proof for the user_attributes,given commitment C""" 
     
     # generate random values
-    r = G2.order().random()
-    s = G2.order().random()
-    
-    # compute A and B
-    A = (pk[0] ** r).pair(pk[-1] ** s)
-    B = C.pair(G1.generator()) ** s * (G1.generator() ** r)
-    # compute challenge
-    c = hashlib.sha256(A.to_binary() + B.to_binary()).digest()
-    c = int.from_bytes(c, byteorder='big') % G2.order()
-    
-    # compute z_r and z_s
-    z_r = r
-    z_s = s
+    L = len(user_attributes)
+    r_t = G1.order().random()
+    r_m = {}
+    r_m = {i: G1.order().random() for i in user_attributes}
+
+    R = pk[0] ** r_t
     for i in user_attributes:
-        z_r = (z_r + (c * pk[i + 1])) % G2.order()
-        z_s = (z_s + (c * user_attributes[i])) % G2.order()
+        R *=  (pk[i+1] ** r_m[i])
+
+    to_hash = str(C) + str(R) + str(pk) 
+    c = int(hashlib.sha256(to_hash.encode('utf-8')).hexdigest(), 16)
+    c = Bn(c)
+
+    s_m = {}
+    for i in r_m:
+         s_m[i] = (r_m[i] - c * Bn.from_binary(user_attributes[i].encode())).mod(G1.order())
+    s_t = (r_t - c * t).mod(G1.order())  
+
+    return R, s_m, s_t  
+
+        
     
-    # return proof
-    return (A, B, c, z_r, z_s)
+    
 
 
 def sign_issue_request(
@@ -218,7 +221,7 @@ def sign_issue_request(
     u = G1.order().random()
     prod = X * C
     for i in issuer_attributes:
-        prod = prod * (pk[i + 1 ] ** issuer_attributes[i])
+        prod = prod * (pk[i + 1 ] ** Bn.from_binary(issuer_attributes[i].encode()))
     
     prod = prod ** u
     
@@ -228,31 +231,23 @@ def sign_issue_request(
 def verify_non_interactive_proof(proof, pk, C):
     """Verify the non-interactive zero-knowledge proof for the committed attributes in C"""
     
-    # unpack proof
-    A, B, c, z_r, z_s = proof
+    R = proof[0]
+    s_m = proof[1]
+    s_t = proof[2]
+
+    #computing challenge from all public info: public key, commitment and R 
+    #doing SHA256 hash of the concat binary of the public info
+    to_hash = str(C) + str(R) + str(pk) 
+    c = int(hashlib.sha256(to_hash.encode('utf-8')).hexdigest(), 16)
+    c = Bn(c)
     
-    # compute A' and B'
-    A_prime = (pk[0] ** z_r) * (pk[-1] ** z_s)
-    B_prime = (G1.generator() ** z_r) * (C ** z_s)
-    
-    # compute challenge
-    c_prime = hashlib.sha256(A_prime.export() + B_prime.export()).digest()
-    c_prime = int.from_bytes(c_prime, byteorder='big') % G2.order()
-    
-    # check if challenges match
-    if c != c_prime:
-        return False
-    
-    # check if A and A' match
-    if not A.is_equal(pk[0] ** z_r * pk[-1] ** z_s * A_prime.inverse()):
-        return False
-    
-    # check if B and B' match
-    if not B.is_equal(G1.generator() ** z_r * C ** z_s * B_prime.inverse()):
-        return False
-    
-    # proof is valid
-    return True
+    verif = C ** c
+    for i in s_m:
+        verif *=  ((pk[i + 1]).pow(s_m[i]))
+    verif *= (pk[0]).pow(s_t)
+
+    #checking if verif == R
+    return R == verif
 
 
     
@@ -269,7 +264,7 @@ def obtain_credential(
     # unpack signature
     sig1, sig2, t = response[0][0], response[0][1], state[0]
     
-    signature = sig1, ( sig2/(sig1 ** t) )
+    signature = (sig1, ( sig2/(sig1 ** t) ))
 
     # unpack attributes
     issuer_attributes = response[1]
@@ -281,8 +276,9 @@ def obtain_credential(
     creds = []
     for i in sorted (creds_dic.keys()):
         creds.append(creds_dic[i])
-
-    assert verify(pk, signature, creds)
+    
+    creds_bytes = [c.encode() for c in creds]
+    assert verify(pk, signature, creds_bytes)
 
     return creds, signature    
 
@@ -295,7 +291,50 @@ def create_disclosure_proof(
         message: bytes
     ) -> DisclosureProof:
     """ Create a disclosure proof """
-    raise NotImplementedError()
+    L = len(credential[0])
+
+    r  = G1.order().random() 
+    t = G1.order().random()
+
+    signature = credential[1]
+    sig_1 , sig_2 = signature[0] , signature[1]
+    rand_signature = sig_1 ** r  , (sig_2 * (sig_1 ** t)) ** r
+    rand_sig_1 , rand_sig_2 = rand_signature[0] , rand_signature[1]
+
+    hidden_attr_index_dic = {i: attr for i, attr in enumerate(credential[0]) if attr in hidden_attributes}
+    disclosed_attr_index_dic = {i: attr for i, attr in enumerate(credential[0]) if attr not in hidden_attributes}
+    
+    commit = (rand_sig_1.pair(pk[2 + L])) ** t
+    for i in hidden_attr_index_dic:
+       commit *=  ((rand_sig_1.pair(pk[4 + L + i])).pow(Bn.from_binary(hidden_attr_index_dic[i].encode())))
+    
+    proof = showing_protocol_zkp(rand_signature , hidden_attr_index_dic ,pk , commit , message , t )
+
+    return commit , rand_signature, disclosed_attr_index_dic, proof
+
+
+
+def showing_protocol_zkp(rand_signature , hidden_attributes , pk , commit , message , t )  :
+    L = int((len(pk) - 4) / 2)
+    rand_sig_1  = rand_signature[0] 
+    rt = G1.order().random()
+    rm = {i: G1.order().random() for i in hidden_attributes}
+
+    R = (rand_sig_1.pair(pk[2 + L])) ** rt
+    
+    for i in hidden_attributes:
+        R *= ((rand_sig_1.pair(pk[ L + 4 + i]) ) ** rm[i])
+
+    to_hash = str(commit) + str(R) + str(message) + str(pk)
+    c = int(hashlib.sha256(to_hash.encode('utf-8')).hexdigest(), 16)
+    c = Bn(c)
+
+    sm = {i: (rm[i] - c * Bn.from_binary(hidden_attributes[i].encode())) % (G1.order()) for i in rm}
+    st = (rt - c * t) % G1.order()
+
+    return R, sm, st
+
+
 
 
 def verify_disclosure_proof(
@@ -307,4 +346,33 @@ def verify_disclosure_proof(
 
     Hint: The verifier may also want to retrieve the disclosed attributes
     """
-    raise NotImplementedError()
+    commit , rand_signature , disclosed_attr_index_dic , proof = disclosure_proof[0] , disclosure_proof[1] ,disclosure_proof[2], disclosure_proof[3]
+    rand_sig_1 = rand_signature[0]
+    
+    verification = showing_protocol_verify_zkp (proof, pk, commit , disclosed_attr_index_dic, rand_signature,message)
+    return verification and not rand_sig_1.is_neutral_element()
+
+def showing_protocol_verify_zkp (proof, pk, commit , disclosed_attr, rand_signature,message) :
+
+    L = int((len(pk) - 4) / 2) 
+
+    R , sm ,st = proof[0] , proof[1] , proof[2]
+    rand_sig_1 , rand_sig_2 = rand_signature[0] , rand_signature[1]
+    print(R)
+    to_hash = str(commit) + str(R) + str(message) + str(pk)
+    c = int(hashlib.sha256(to_hash.encode('utf-8')).hexdigest(), 16)
+    c = Bn(c)
+
+    verification = commit ** c 
+    for i in sm:
+        verification *=   ((rand_sig_1.pair(pk[4 + L + i])) ** sm[i])
+    verification =   (rand_sig_1.pair(pk[2 + L])) ** st
+
+    left_commit = rand_sig_2.pair(pk[2 + L])
+    for i in disclosed_attr:
+        left_commit *= ((rand_sig_1.pair(pk[3 + L + i])) ** (-Bn.from_binary(disclosed_attr[i].encode())))
+    print(verification)
+    left_commit = left_commit / rand_sig_1.pair(pk[3 + L])
+    print((R == verification))
+    print((commit == left_commit))
+    return ((R == verification) and (commit == left_commit))
