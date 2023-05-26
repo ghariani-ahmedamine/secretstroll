@@ -3,6 +3,8 @@ Classes that you need to complete.
 """
 
 from typing import Any, Dict, List, Union, Tuple
+from credential import *
+import random
 
 # Optional import
 from serialization import jsonpickle
@@ -22,7 +24,9 @@ class Server:
         ###############################################
         # TODO: Complete this function.
         ###############################################
-        raise NotImplementedError
+        self.secret_key = None
+        self.public_key = None
+        self.public_param = None
 
 
     @staticmethod
@@ -47,8 +51,19 @@ class Server:
         ###############################################
         # TODO: Complete this function.
         ###############################################
-        raise NotImplementedError
-
+        
+        self.subscriptions = subscriptions
+        # Generate the server attributes (10 attributes between 0 and 1000)
+        server_attributes = []
+        for i in range(0, 10):
+            server_attributes.append(randint(1000))
+        
+        sk, pk = generate_key(server_attributes)
+        self.secret_key = sk
+        self.public_key = pk
+        public_informations = pk
+        
+        return sk.to_bytes(), public_informations.to_bytes()
 
     def process_registration(
             self,
@@ -74,7 +89,18 @@ class Server:
         ###############################################
         # TODO: Complete this function.
         ###############################################
-        raise NotImplementedError
+        # Deserialize the server's secret key, public key and issuance request
+        server_secret_key = jsonpickle.decode(server_sk)
+        server_public_key = jsonpickle.decode(server_pk)
+        issuance_request = jsonpickle.decode(issuance_request)
+        
+        # Generate the response
+        response = None #TODO (Don't understand what should be)
+        
+        # Serialize the credential response
+        serialized_response = jsonpickle.encode(response)
+
+        return serialized_response
 
 
     def check_request_signature(
@@ -98,7 +124,22 @@ class Server:
         ###############################################
         # TODO: Complete this function.
         ###############################################
-        raise NotImplementedError
+        # Deserialize the server public key and signature
+        pk = jsonpickle.decode(server_pk)
+        sign = jsonpickle.decode(signature)
+    
+        # Extract components from the signature
+        g_u, prod = sign
+    
+        # Verify the components of the signature
+        g = pk[0]
+        C = prod / (g_u ** Bn.from_binary(message))
+        PK = pk[1]
+            
+        # TODO Not sure it's the good way to do it (and the good function to use)
+        is_valid_proof = verify_non_interactive_proof(PK, pk, C)
+    
+        return is_valid_proof
 
 
 class Client:
@@ -137,7 +178,13 @@ class Client:
         ###############################################
         # TODO: Complete this function.
         ###############################################
-        raise NotImplementedError
+        # Deserialize the server public key
+        pk = jsonpickle.decode(server_pk)
+        
+        # Create the issuance request with the public key and the user attributes (username and subscriptions).
+        issueRequest, state = create_issue_request(pk, subscriptions.insert(0, username))
+        
+        return issueRequest.to_bytes(), state
 
 
     def process_registration_response(
@@ -160,7 +207,14 @@ class Client:
         ###############################################
         # TODO: Complete this function.
         ###############################################
-        raise NotImplementedError
+        # Deserialize the server public key and signature
+        pk = jsonpickle.decode(server_pk)
+        response = jsonpickle.decode(server_response)
+        
+        # Get the credentials (contains credentials and signature in tuple)  
+        credentials = obtain_credential(pk, response, private_state)
+        
+        return credentials.to_bytes
 
 
     def sign_request(
@@ -184,4 +238,7 @@ class Client:
         ###############################################
         # TODO: Complete this function.
         ###############################################
+        pk = jsonpickle.decode(server_pk)
+        cred = jsonpickle.decode(credentials)
+        
         raise NotImplementedError
