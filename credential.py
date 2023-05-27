@@ -20,7 +20,7 @@ from typing import Any, List, Tuple
 
 from serialization import jsonpickle
 
-from petrelic.multiplicative.pairing import G1, G2, GT
+from petrelic.multiplicative.pairing import *
 
 from petrelic.bn import Bn
 
@@ -29,14 +29,16 @@ from petrelic.bn import Bn
 # Maybe at the end, you will not need aliases at all!
 SecretKey = Any
 PublicKey = Any
-Signature = Any
-Attribute = Any
-AttributeMap = Any
-IssueRequest = Any
-State = Any
-BlindSignature = Any
-AnonymousCredential = Any
-DisclosureProof = Any
+Signature = Tuple[G1Element, G1Element]
+
+AttributeMap = dict[int , str]
+ZKproof = Tuple [G1Element , dict[int , Bn] , Bn]
+IssueRequest = Tuple[G1Element , ZKproof]
+State = Tuple[Bn , AttributeMap]
+BlindSignature = Tuple[Signature , AttributeMap]
+AnonymousCredential = Tuple[List[str ] , Signature]
+
+DisclosureProof = Tuple[Signature , AttributeMap , GTElement]
 
 
 ######################
@@ -45,7 +47,7 @@ DisclosureProof = Any
 
 
 def generate_key(
-        attributes: List[Attribute]
+        attributes: List[str]
     ) -> Tuple[SecretKey, PublicKey]:
     """ Generate signer key pair """
 
@@ -270,24 +272,24 @@ def obtain_credential(
     issuer_attributes = response[1]
     user_attributes = state[1]
 
-    creds_dic = dict(issuer_attributes)
-    creds_dic.update(user_attributes)
+    attr_dic = dict(issuer_attributes)
+    attr_dic.update(user_attributes)
 
-    creds = []
-    for i in sorted (creds_dic.keys()):
-        creds.append(creds_dic[i])
+    attributes = []
+    for i in sorted (attr_dic.keys()):
+        attributes.append(attr_dic[i])
     
-    creds_bytes = [c.encode() for c in creds]
-    assert verify(pk, signature, creds_bytes)
+    attributes_bytes = [c.encode() for c in attributes]
+    assert verify(pk, signature, attributes_bytes)
 
-    return creds, signature    
+    return attributes, signature    
 
 ## SHOWING PROTOCOL ##
 
 def create_disclosure_proof(
         pk: PublicKey,
         credential: AnonymousCredential,
-        hidden_attributes: List[Attribute],
+        hidden_attributes: List[str],
         message: bytes
     ) -> DisclosureProof:
     """ Create a disclosure proof """
@@ -299,40 +301,37 @@ def create_disclosure_proof(
     signature = credential[1]
     sig_1 , sig_2 = signature[0] , signature[1]
     rand_signature = sig_1 ** r  , (sig_2 * (sig_1 ** t)) ** r
-    rand_sig_1 , rand_sig_2 = rand_signature[0] , rand_signature[1]
+    
 
     hidden_attr_index_dic = {i: attr for i, attr in enumerate(credential[0]) if attr in hidden_attributes}
     disclosed_attr_index_dic = {i: attr for i, attr in enumerate(credential[0]) if attr not in hidden_attributes}
     
-    commit = (rand_sig_1.pair(pk[2 + L])) ** t
-    for i in hidden_attr_index_dic:
-       commit *=  ((rand_sig_1.pair(pk[4 + L + i])).pow(Bn.from_binary(hidden_attr_index_dic[i].encode())))
     
-    proof = showing_protocol_zkp(rand_signature , hidden_attr_index_dic ,pk , commit , message , t )
+    
+    proof = showing_protocol_zkp(rand_signature , hidden_attr_index_dic ,pk , message , t )
+    
+    return   rand_signature, disclosed_attr_index_dic, proof
 
-    return commit , rand_signature, disclosed_attr_index_dic, proof
 
 
-
-def showing_protocol_zkp(rand_signature , hidden_attributes , pk , commit , message , t )  :
+def showing_protocol_zkp(rand_signature , hidden_attributes , pk  , message , t )  :
     L = int((len(pk) - 4) / 2)
     rand_sig_1  = rand_signature[0] 
-    rt = G1.order().random()
-    rm = {i: G1.order().random() for i in hidden_attributes}
+    
 
-    R = (rand_sig_1.pair(pk[2 + L])) ** rt
+    R = (rand_sig_1.pair(pk[2 + L])) ** t
     
     for i in hidden_attributes:
-        R *= ((rand_sig_1.pair(pk[ L + 4 + i]) ) ** rm[i])
+        R *= ((rand_sig_1.pair(pk[ L + 4 + i]) ) ** Bn.from_binary(hidden_attributes[i].encode()))
 
-    to_hash = str(commit) + str(R) + str(message) + str(pk)
-    c = int(hashlib.sha256(to_hash.encode('utf-8')).hexdigest(), 16)
-    c = Bn(c)
+    hash = hashlib.sha256()
+    hash.update(message)
 
-    sm = {i: (rm[i] - c * Bn.from_binary(hidden_attributes[i].encode())) % (G1.order()) for i in rm}
-    st = (rt - c * t) % G1.order()
+    R *= GT.generator() ** Bn.from_binary(hash.digest())
 
-    return R, sm, st
+    
+
+    return R
 
 
 
@@ -346,33 +345,32 @@ def verify_disclosure_proof(
 
     Hint: The verifier may also want to retrieve the disclosed attributes
     """
-    commit , rand_signature , disclosed_attr_index_dic , proof = disclosure_proof[0] , disclosure_proof[1] ,disclosure_proof[2], disclosure_proof[3]
+    rand_signature , disclosed_attr_index_dic , proof = disclosure_proof[0] , disclosure_proof[1] ,disclosure_proof[2]
     rand_sig_1 = rand_signature[0]
     
-    verification = showing_protocol_verify_zkp (proof, pk, commit , disclosed_attr_index_dic, rand_signature,message)
+    verification = showing_protocol_verify_zkp (proof, pk,  disclosed_attr_index_dic, rand_signature,message)
     return verification and not rand_sig_1.is_neutral_element()
 
-def showing_protocol_verify_zkp (proof, pk, commit , disclosed_attr, rand_signature,message) :
+def showing_protocol_verify_zkp (proof, pk  , disclosed_attr, rand_signature,message) :
 
     L = int((len(pk) - 4) / 2) 
-
-    R , sm ,st = proof[0] , proof[1] , proof[2]
+    g, Y, g_tilda, X_tilda, Y_tilda  = pk[0], pk[1:L+1], pk[L+2], pk[L+3], pk[L+4:2*L+4]
+    
     rand_sig_1 , rand_sig_2 = rand_signature[0] , rand_signature[1]
-    print(R)
-    to_hash = str(commit) + str(R) + str(message) + str(pk)
-    c = int(hashlib.sha256(to_hash.encode('utf-8')).hexdigest(), 16)
-    c = Bn(c)
+    
+    
+    
 
-    verification = commit ** c 
-    for i in sm:
-        verification *=   ((rand_sig_1.pair(pk[4 + L + i])) ** sm[i])
-    verification =   (rand_sig_1.pair(pk[2 + L])) ** st
+    verification = rand_sig_2.pair(g_tilda) / rand_sig_1.pair(X_tilda)
+    
 
-    left_commit = rand_sig_2.pair(pk[2 + L])
+    
     for i in disclosed_attr:
-        left_commit *= ((rand_sig_1.pair(pk[3 + L + i])) ** (-Bn.from_binary(disclosed_attr[i].encode())))
-    print(verification)
-    left_commit = left_commit / rand_sig_1.pair(pk[3 + L])
-    print((R == verification))
-    print((commit == left_commit))
-    return ((R == verification) and (commit == left_commit))
+        verification *= ((rand_sig_1.pair(Y_tilda[i])) ** (-Bn.from_binary(disclosed_attr[i].encode())))
+    
+    hash = hashlib.sha256()
+    hash.update(message)
+
+    verification *= GT.generator() ** Bn.from_binary(hash.digest())
+    print(proof == verification)
+    return (proof == verification) 
