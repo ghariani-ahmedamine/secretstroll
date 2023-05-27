@@ -22,12 +22,16 @@ class Server:
         Server constructor.
         """
         ###############################################
-        # TODO: Complete this function.
+        # TO DO: Complete this function.
         ###############################################
+        # Initialize the server informations
         self.secret_key = None
         self.public_key = None
-        self.public_param = None
-
+        self.valid_attribute_map = None
+        self.public_informations  = None
+        
+        # Initialize the server account
+        self.registered_account =  {}
 
     @staticmethod
     def generate_ca(
@@ -49,21 +53,26 @@ class Server:
             should be encoded as bytes.
         """
         ###############################################
-        # TODO: Complete this function.
+        # TO DO: Complete this function.
         ###############################################
+        # Transform the valid attribute list in a map
+        attribute_map = {index: element for index, element in enumerate(subscriptions)}
+        self.valid_attribute_map = attribute_map
         
-        self.subscriptions = subscriptions
         # Generate the server attributes (10 attributes between 0 and 1000)
         server_attributes = []
         for i in range(0, 10):
-            server_attributes.append(randint(1000))
+            server_attributes.append(str(randint(1000)))
         
+        # Generate the keys of the server
         sk, pk = generate_key(server_attributes)
+        
+        # Saving the information of the server
         self.secret_key = sk
         self.public_key = pk
-        public_informations = pk
+        self.public_informations = (pk, attribute_map)
         
-        return sk.to_bytes(), public_informations.to_bytes()
+        return self.secret_key.to_bytes(), self.public_informations.to_bytes()
 
     def process_registration(
             self,
@@ -93,6 +102,14 @@ class Server:
         server_secret_key = jsonpickle.decode(server_sk)
         server_public_key = jsonpickle.decode(server_pk)
         issuance_request = jsonpickle.decode(issuance_request)
+        
+        # Check that all the user attributes are valid for the server
+        for attribute in subscriptions:
+            if (attribute not in valid_attribute_map.values()):
+                raise ValueError("One of the attributes of the user is not in the valid server attribute.")
+        
+        # Register the user on the server (saved as UserName -> Subscriptions)
+        self.registered_account[username] = subscriptions
         
         # Generate the response
         response = None #TODO (Don't understand what should be)
@@ -152,7 +169,15 @@ class Client:
         ###############################################
         # TODO: Complete this function.
         ###############################################
-        raise NotImplementedError()
+        # Initialize the users informations
+        self.username = None
+        self.subscriptions = None
+        self.credentials = None
+        self.signature = None
+        
+        # Initialize the server informations
+        self.server_pk = None
+
 
 
     def prepare_registration(
@@ -176,10 +201,15 @@ class Client:
                 You need to design the state yourself.
         """
         ###############################################
-        # TODO: Complete this function.
+        # TO DO: Complete this function.
         ###############################################
         # Deserialize the server public key
         pk = jsonpickle.decode(server_pk)
+        
+        # Define the client and server informations
+        self.username = username
+        self.subscriptions = subscriptions
+        self.server_pk = pk
         
         # Create the issuance request with the public key and the user attributes (username and subscriptions).
         issueRequest, state = create_issue_request(pk, subscriptions.insert(0, username))
@@ -205,14 +235,18 @@ class Client:
             credentials: create an attribute-based credential for the user
         """
         ###############################################
-        # TODO: Complete this function.
+        # TO DO: Complete this function.
         ###############################################
         # Deserialize the server public key and signature
         pk = jsonpickle.decode(server_pk)
         response = jsonpickle.decode(server_response)
         
         # Get the credentials (contains credentials and signature in tuple)  
-        credentials = obtain_credential(pk, response, private_state)
+        credentials, signature = obtain_credential(pk, response, private_state)
+        
+        # Save the credentials and the signature
+        self.credentials = credentials
+        self.signature = signature
         
         return credentials.to_bytes
 
