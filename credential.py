@@ -68,7 +68,7 @@ def generate_key(
     g_tilda_to_y_values = [g_tilda ** i for i in y]
 
     # form pk = (g, Y1 , ..., YL , , g̃, X̃, Ỹ1 , ..., ỸL )
-    pk = (g, ) + tuple(g_to_y_values) + tuple(" ")  + (g_tilda, X_tilda) + tuple(g_tilda_to_y_values)
+    pk = (g, ) + tuple(g_to_y_values)  + (g_tilda, X_tilda) + tuple(g_tilda_to_y_values)
     
     # form sk = (x, X, y1, ... ,yL)
     sk = (x,X) + tuple(y)
@@ -120,13 +120,12 @@ def verify(
     # Convert msgs from bytes to Bn 
     bn_msgs = [Bn.from_binary(m) for m in msgs]
 
-    if len(pk) % 2 != 0:
-       raise ValueError("The size of the public key should be even !")
-    key_length = int((len(pk) - 4)/2)
+    
+    key_length = int((len(pk) - 3)/2)
     message_len = len(msgs)
     
     # Unpack public key compenents from pk = (g, Y1 , ..., YL , , g̃, X̃, Ỹ1 , ..., ỸL )
-    g, Y, g_tilda, X_tilda, Y_tilda  = pk[0], pk[1:key_length+1], pk[key_length+2], pk[key_length+3], pk[key_length+4:2*key_length+4]
+    g, Y, g_tilda, X_tilda, Y_tilda  = pk[0], pk[1:key_length], pk[key_length+1], pk[key_length+2], pk[key_length+3:2*key_length+3]
     
     #Compute the product of Yi ** mi
     prod_Yi_mi = G2.neutral_element()
@@ -244,7 +243,9 @@ def verify_non_interactive_proof(proof, pk, C):
     c = Bn(c)
     
     verif = C ** c
+    print((s_m))
     for i in s_m:
+        
         verif *=  ((pk[i + 1]).pow(s_m[i]))
     verif *= (pk[0]).pow(s_t)
 
@@ -315,14 +316,14 @@ def create_disclosure_proof(
 
 
 def showing_protocol_zkp(rand_signature , hidden_attributes , pk  , message , t )  :
-    L = int((len(pk) - 4) / 2)
+    L = int((len(pk) - 3) / 2)
     rand_sig_1  = rand_signature[0] 
     
 
-    R = (rand_sig_1.pair(pk[2 + L])) ** t
+    R = (rand_sig_1.pair(pk[1 + L])) ** t
     
     for i in hidden_attributes:
-        R *= ((rand_sig_1.pair(pk[ L + 4 + i]) ) ** Bn.from_binary(hidden_attributes[i].encode()))
+        R *= ((rand_sig_1.pair(pk[ L + 3 + i]) ) ** Bn.from_binary(hidden_attributes[i].encode()))
 
     hash = hashlib.sha256()
     hash.update(message)
@@ -353,8 +354,8 @@ def verify_disclosure_proof(
 
 def showing_protocol_verify_zkp (proof, pk  , disclosed_attr, rand_signature,message) :
 
-    L = int((len(pk) - 4) / 2) 
-    g, Y, g_tilda, X_tilda, Y_tilda  = pk[0], pk[1:L+1], pk[L+2], pk[L+3], pk[L+4:2*L+4]
+    L = int((len(pk) - 3) / 2) 
+    g, Y, g_tilda, X_tilda, Y_tilda  = pk[0], pk[1:L], pk[L+1], pk[L+2], pk[L+3:2*L+3]
     
     rand_sig_1 , rand_sig_2 = rand_signature[0] , rand_signature[1]
     

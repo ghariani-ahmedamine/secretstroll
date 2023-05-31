@@ -9,8 +9,7 @@ import random
 # Optional import
 from serialization import jsonpickle
 
-# Type aliases
-State = Any
+
 
 
 class Server:
@@ -25,13 +24,7 @@ class Server:
         # TO DO: Complete this function.
         ###############################################
         # Initialize the server informations
-        self.secret_key = None
-        self.public_key = None
-        self.valid_attribute_map = None
-        self.public_informations  = None
-        
-        # Initialize the server account
-        self.registered_account =  {}
+        self.users = []
 
     @staticmethod
     def generate_ca(
@@ -55,24 +48,10 @@ class Server:
         ###############################################
         # TO DO: Complete this function.
         ###############################################
-        # Transform the valid attribute list in a map
-        attribute_map = {index: element for index, element in enumerate(subscriptions)}
-        self.valid_attribute_map = attribute_map
+        sk , pk = generate_key(subscriptions)
+
+        return jsonpickle.encode(pk) , jsonpickle.encode(sk)
         
-        # Generate the server attributes (10 attributes between 0 and 1000)
-        server_attributes = []
-        for i in range(0, 10):
-            server_attributes.append(str(randint(1000)))
-        
-        # Generate the keys of the server
-        sk, pk = generate_key(server_attributes)
-        
-        # Saving the information of the server
-        self.secret_key = sk
-        self.public_key = pk
-        self.public_informations = (pk, attribute_map)
-        
-        return self.secret_key.to_bytes(), self.public_informations.to_bytes()
 
     def process_registration(
             self,
@@ -101,23 +80,22 @@ class Server:
         # Deserialize the server's secret key, public key and issuance request
         server_secret_key = jsonpickle.decode(server_sk)
         server_public_key = jsonpickle.decode(server_pk)
-        issuance_request = jsonpickle.decode(issuance_request)
+        issuance_request_decoded = jsonpickle.decode(issuance_request)
         
-        # Check that all the user attributes are valid for the server
-        for attribute in subscriptions:
-            if (attribute not in valid_attribute_map.values()):
-                raise ValueError("One of the attributes of the user is not in the valid server attribute.")
-        
-        # Register the user on the server (saved as UserName -> Subscriptions)
-        self.registered_account[username] = subscriptions
-        
-        # Generate the response
-        response = None #TODO (Don't understand what should be)
-        
-        # Serialize the credential response
-        serialized_response = jsonpickle.encode(response)
+        self.users.append(username)
 
-        return serialized_response
+        #creating issuer_attributes AttributeMap
+
+        L = int((len(server_public_key)- 3) / 2) -1
+        issuer_attributes = {i + 1: sub for i, sub in enumerate(subscriptions)}
+        issuer_attributes.update({i: "" for i in range(len(subscriptions) + 1, L + 1)})
+
+        #print(server_public_key)
+
+        #create blind signature
+        blind_signature = sign_issue_request(server_secret_key,server_public_key, issuance_request_decoded, issuer_attributes)
+        
+        return jsonpickle.encode(blind_signature)
 
 
     def check_request_signature(
@@ -143,20 +121,16 @@ class Server:
         ###############################################
         # Deserialize the server public key and signature
         pk = jsonpickle.decode(server_pk)
-        sign = jsonpickle.decode(signature)
+        disclosure_proof = jsonpickle.decode(signature)
+
+        #verify that revealed attributes and  attributes signed by the disclosure match
+        verif = set(list(disclosure_proof[1].values())) == set(revealed_attributes)
     
-        # Extract components from the signature
-        g_u, prod = sign
+        return verify_disclosure_proof(pk , disclosure_proof , message) and verif
     
-        # Verify the components of the signature
-        g = pk[0]
-        C = prod / (g_u ** Bn.from_binary(message))
-        PK = pk[1]
-            
-        # TODO Not sure it's the good way to do it (and the good function to use)
-        is_valid_proof = verify_non_interactive_proof(PK, pk, C)
+        
     
-        return is_valid_proof
+        
 
 
 class Client:
@@ -204,17 +178,21 @@ class Client:
         # TO DO: Complete this function.
         ###############################################
         # Deserialize the server public key
-        pk = jsonpickle.decode(server_pk)
+        server_public_key = jsonpickle.decode(server_pk)
         
         # Define the client and server informations
         self.username = username
         self.subscriptions = subscriptions
-        self.server_pk = pk
+        self.secret_key = G1.order().random()
+
+        user_attributes = {0: str(self.secret_key)}
         
         # Create the issuance request with the public key and the user attributes (username and subscriptions).
-        issueRequest, state = create_issue_request(pk, subscriptions.insert(0, username))
+        issue_request, state = create_issue_request(server_public_key, user_attributes)
+
+        return jsonpickle.encode(issue_request) , state
         
-        return issueRequest.to_bytes(), state
+        
 
 
     def process_registration_response(
@@ -238,17 +216,15 @@ class Client:
         # TO DO: Complete this function.
         ###############################################
         # Deserialize the server public key and signature
-        pk = jsonpickle.decode(server_pk)
+        server_public_key = jsonpickle.decode(server_pk)
         response = jsonpickle.decode(server_response)
         
         # Get the credentials (contains credentials and signature in tuple)  
-        credentials, signature = obtain_credential(pk, response, private_state)
+        credentials = obtain_credential(server_public_key, response, private_state)
         
-        # Save the credentials and the signature
-        self.credentials = credentials
-        self.signature = signature
+        return jsonpickle.encode(credentials)
         
-        return credentials.to_bytes
+        
 
 
     def sign_request(
@@ -272,7 +248,12 @@ class Client:
         ###############################################
         # TODO: Complete this function.
         ###############################################
-        pk = jsonpickle.decode(server_pk)
-        cred = jsonpickle.decode(credentials)
+        server_public_key = jsonpickle.decode(server_pk)
+        creds , signature = jsonpickle.decode(credentials)
+
+        hidden_attributes = [cred for cred in creds if cred not in types]
+
+        disclosure_proof = create_disclosure_proof(server_public_key, (creds, sign), hidden_attributes, message)
         
-        raise NotImplementedError
+        return jsonpickle.encode(disclosure_proof)
+        
