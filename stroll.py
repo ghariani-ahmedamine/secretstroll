@@ -250,10 +250,10 @@ class Client:
         ###############################################
         server_public_key = jsonpickle.decode(server_pk)
         creds , signature = jsonpickle.decode(credentials)
-
+        
         hidden_attributes = [cred for cred in creds if cred not in types]
 
-        disclosure_proof = create_disclosure_proof(server_public_key, (creds, sign), hidden_attributes, message)
+        disclosure_proof = create_disclosure_proof(server_public_key, (creds, signature), hidden_attributes, message)
         
         return jsonpickle.encode(disclosure_proof)
         

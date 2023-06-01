@@ -85,7 +85,7 @@ def sign(
     
     # Pick random generator h 
     h = G1.generator()
-
+    
     # Convert msgs from bytes to Bn
     bn_msgs = [Bn.from_binary(m) for m in msgs]
     
@@ -243,10 +243,10 @@ def verify_non_interactive_proof(proof, pk, C):
     c = Bn(c)
     
     verif = C ** c
-    print((s_m))
+
     for i in s_m:
-        
-        verif *=  ((pk[i + 1]).pow(s_m[i]))
+        j = int(i)
+        verif *=  ((pk[j + 1]).pow(s_m[i]))
     verif *= (pk[0]).pow(s_t)
 
     #checking if verif == R
@@ -277,7 +277,8 @@ def obtain_credential(
     attr_dic.update(user_attributes)
 
     attributes = []
-    for i in sorted (attr_dic.keys()):
+    sorted_keys = sorted(attr_dic.keys(), key=lambda x: int(x))
+    for i in sorted_keys:
         attributes.append(attr_dic[i])
     
     attributes_bytes = [c.encode() for c in attributes]
@@ -365,9 +366,10 @@ def showing_protocol_verify_zkp (proof, pk  , disclosed_attr, rand_signature,mes
     verification = rand_sig_2.pair(g_tilda) / rand_sig_1.pair(X_tilda)
     
 
-    
-    for i in disclosed_attr:
-        verification *= ((rand_sig_1.pair(Y_tilda[i])) ** (-Bn.from_binary(disclosed_attr[i].encode())))
+
+    for j in disclosed_attr:
+        i = int(j)
+        verification *= ((rand_sig_1.pair(Y_tilda[i])) ** (-Bn.from_binary(disclosed_attr[j].encode())))
     
     hash = hashlib.sha256()
     hash.update(message)

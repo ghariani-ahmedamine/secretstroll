@@ -28,7 +28,7 @@ def test_secret_scroll_correct1():
 
 def test_sign_and_verify1():
     
-    attributes = ["18","username"]
-    secret,public = generate_key(attributes)
-    signature = sign(secret,attributes)
-    assert verify(public,signature,attributes)
+    attributes = [b"18", b"username"]
+    secret, public = generate_key(attributes)
+    signature = sign(secret, attributes)
+    assert verify(public, signature,attributes)
