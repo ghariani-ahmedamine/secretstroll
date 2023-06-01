@@ -48,7 +48,7 @@ class Server:
         ###############################################
         # TO DO: Complete this function.
         ###############################################
-        sk , pk = generate_key(subscriptions)
+        sk , pk = generate_key(subscriptions + ["username"])
 
         return jsonpickle.encode(pk) , jsonpickle.encode(sk)
         
