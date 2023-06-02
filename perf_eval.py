@@ -209,4 +209,4 @@ def evaluate_verify():
 evaluate_keygen()
 evaluate_issuance()
 evaluate_showing()
-evaluate_verify
+evaluate_verify()
