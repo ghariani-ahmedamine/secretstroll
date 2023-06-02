@@ -9,7 +9,9 @@ def test_protocol_successful():
 
     valid_attributes = ["restaurants","gyms","dojos","libraries"]
 
-    public,secret = server.generate_ca(valid_attributes )
+    publi, secre = server.generate_ca(valid_attributes)
+    public = str(publi.decode('utf-8'))
+    secret = str(secre.decode('utf-8'))
 
     subscriptions = ["restaurants","gyms" , "dojos"]
 
