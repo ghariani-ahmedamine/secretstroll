@@ -48,9 +48,9 @@ class Server:
         ###############################################
         # TO DO: Complete this function.
         ###############################################
-        sk , pk = generate_key(subscriptions + ["username"])
-
-        return jsonpickle.encode(pk) , jsonpickle.encode(sk)
+        sk , pk = generate_key(subscriptions)
+        
+        return jsonpickle.encode(pk).encode('utf-8') , jsonpickle.encode(sk).encode('utf-8') 
         
 
     def process_registration(
